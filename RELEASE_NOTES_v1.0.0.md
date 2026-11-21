@@ -17,10 +17,11 @@ The first versioned stable-release candidate of the FreeBuds 6i-focused fork.
 - FreeBuds 6i support, with other supported models retaining their existing model-specific controls.
 - Some settings depend on the earbud firmware and capability reports; the complete feature set is not verified on every model.
 
-## Install / update
+## Install / update — new signing key
 - Download the signed `librebuds.apk` attached to this release.
-- Existing installations can update in place only if signed by the same signing certificate and with a lower versionCode than this release.
-- If the signatures differ, Android will block an in-place upgrade; don't uninstall without considering the loss of local app settings.
+- **This fork uses a newly generated, independently controlled signing certificate starting with v1.0.0.** It is not compatible with older APKs signed with the previous key, including the old `Stable` release.
+- Back up any settings you need before uninstalling the previous APK. You must uninstall the old app before installing this version if its signing certificate differs; uninstalling may erase local app data.
+- Once v1.0.0 is installed, future fork releases must be signed with this same new key to support in-place upgrades.
 
 ## Attribution
 Built on [LibreBuds](https://github.com/librebuds/librebuds). The interface is independently implemented using [QuickBuds](https://github.com/spizganed/QuickBuds) as a visual reference. Original GPLv3 licensing and project credits are preserved in README and NOTICE.
