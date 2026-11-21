@@ -1,7 +1,9 @@
 name: Publish signed stable APK
 
-# Manual-only: publish after the owner adds signing secrets.
+# Release-branch push starts the validated release after secrets are added.
 on:
+  push:
+    branches: [release/stable-v1.0.0]
   workflow_dispatch:
 
 permissions:
