@@ -49,11 +49,9 @@ jobs:
         env:
           KEYSTORE_B64: ${{ secrets.LIBREBUDS_KEYSTORE_BASE64 }}
           STORE_PASSWORD: ${{ secrets.LIBREBUDS_STORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.LIBREBUDS_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.LIBREBUDS_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          for name in KEYSTORE_B64 STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+          for name in KEYSTORE_B64 STORE_PASSWORD; do
             if [ -z "${!name:-}" ]; then
               echo "::error::Missing required signing secret: $name"
               exit 1
@@ -61,13 +59,32 @@ jobs:
           done
           printf '%s' "$KEYSTORE_B64" | base64 --decode > android/release-keystore.jks
           chmod 600 android/release-keystore.jks
+
+          # This fork's new key uses a single private-key entry and the SAME
+          # password for the keystore and the key. Recover the alias directly
+          # from the keystore instead of relying on copied alias/key-password secrets.
+          if ! keytool -list -v \
+              -keystore android/release-keystore.jks \
+              -storepass "$STORE_PASSWORD" > "$RUNNER_TEMP/key-list.txt" 2>/dev/null; then
+            echo "::error::Cannot open signing keystore with LIBREBUDS_STORE_PASSWORD. Check both the keystore Base64 and store password."
+            exit 1
+          fi
+          alias_count="$(grep -c '^Alias name: ' "$RUNNER_TEMP/key-list.txt" || true)"
+          if [ "$alias_count" != "1" ]; then
+            echo "::error::Expected a single signing key in the fork keystore; found $alias_count."
+            exit 1
+          fi
+          actual_alias="$(sed -n 's/^Alias name: //p' "$RUNNER_TEMP/key-list.txt" | head -n 1)"
+          test -n "$actual_alias"
+
           {
             printf 'RELEASE_STORE_FILE=release-keystore.jks\n'
             printf 'RELEASE_STORE_PASSWORD=%s\n' "$STORE_PASSWORD"
-            printf 'RELEASE_KEY_ALIAS=%s\n' "$KEY_ALIAS"
-            printf 'RELEASE_KEY_PASSWORD=%s\n' "$KEY_PASSWORD"
+            printf 'RELEASE_KEY_ALIAS=%s\n' "$actual_alias"
+            printf 'RELEASE_KEY_PASSWORD=%s\n' "$STORE_PASSWORD"
           } > android/keystore.properties
           chmod 600 android/keystore.properties
+          rm -f "$RUNNER_TEMP/key-list.txt"
 
       - name: Build signed release APK
         working-directory: android
