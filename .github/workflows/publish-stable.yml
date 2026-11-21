@@ -1,9 +1,7 @@
 name: Publish signed stable APK
 
-# Release-branch push starts the validated release after secrets are added.
+# Manually publish once the owner has confirmed the signing secrets.
 on:
-  push:
-    branches: [release/stable-v1.0.0]
   workflow_dispatch:
 
 permissions:
