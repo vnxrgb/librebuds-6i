@@ -1,0 +1,101 @@
+name: Publish verified LibreBuds+ v1.1.0 APK
+
+# The main CI verified this signed APK and uploaded it as a build artifact,
+# but the built-in GitHub Actions token was denied creating a GitHub Release.
+# This manual workflow uses a fine-grained user-managed token just for publishing.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  publish:
+    name: Verify existing signed artifact and publish v1.1.0
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require authorized release token
+        env:
+          RELEASE_TOKEN: ${{ secrets.LIBREBUDS_RELEASE_TOKEN }}
+        run: |
+          if [ -z "$RELEASE_TOKEN" ]; then
+            echo "::error::Add repository secret LIBREBUDS_RELEASE_TOKEN with Contents: Read and write, then rerun."
+            exit 1
+          fi
+
+      - name: Get the vetted signed APK from successful validation steps
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id=44945792736
+          expected_sha=ce789fed351bd8435fa7a7644c55732f015c6cb4
+          actual_sha="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq .head_sha)"
+          test "$actual_sha" = "$expected_sha"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/jobs?per_page=100" --jq '
+            .jobs[].steps[] | select(.name == "Verify stable ID, version and same v1.0.0 signing lineage" and .conclusion == "success") | .name
+          ' | grep -q 'Verify stable ID'
+          mkdir -p "$RUNNER_TEMP/stable"
+          gh run download "$run_id" --name librebuds-plus-v1.1.0-signed --dir "$RUNNER_TEMP/stable"
+          (cd "$RUNNER_TEMP/stable" && sha256sum --check librebuds-plus-v1.1.0.apk.sha256)
+          test -s "$RUNNER_TEMP/stable/librebuds-plus-v1.1.0.apk"
+
+      - name: Independently recheck version and the v1.0.0 signing certificate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          candidate="$RUNNER_TEMP/stable/librebuds-plus-v1.1.0.apk"
+          mkdir -p "$RUNNER_TEMP/old"
+          gh release download v1.0.0 --pattern librebuds.apk --dir "$RUNNER_TEMP/old"
+          previous="$RUNNER_TEMP/old/librebuds.apk"
+          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          aapt="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          "$apksigner" verify --print-certs "$candidate" > "$RUNNER_TEMP/new-cert.txt"
+          "$apksigner" verify --print-certs "$previous" > "$RUNNER_TEMP/old-cert.txt"
+          "$aapt" dump badging "$candidate" > "$RUNNER_TEMP/new-badging.txt"
+          "$aapt" dump badging "$previous" > "$RUNNER_TEMP/old-badging.txt"
+          python3 - <<'PY'
+          import os,pathlib,re
+          temp=pathlib.Path(os.environ["RUNNER_TEMP"])
+          def digest(file):
+              output=(temp/file).read_text()
+              matches=re.findall(r'(?im)^.*(?:certificate|cert).*?sha[- ]?256[^\n]*?([0-9a-fA-F]{64})(?:\b|$)',output)
+              if not matches: raise SystemExit(f"Missing signing certificate SHA-256: {file}")
+              return matches[0].lower()
+          def identity(file):
+              output=(temp/file).read_text()
+              m=re.search(r"^package: name='([^']+)' versionCode='(\d+)' versionName='([^']+)'",output,re.M)
+              if not m: raise SystemExit(f"Missing Android package metadata: {file}")
+              return m.group(1),int(m.group(2)),m.group(3)
+          if digest("new-cert.txt") != digest("old-cert.txt"):
+              raise SystemExit("Signing certificate mismatch")
+          old=identity("old-badging.txt")
+          new=identity("new-badging.txt")
+          if old[0] != new[0] or new[0] != "io.github.librebuds":
+              raise SystemExit("Package identity mismatch")
+          if new[1] != 21 or new[1] <= old[1] or new[2] != "1.1.0":
+              raise SystemExit(f"Invalid stable upgrade version: {old} -> {new}")
+          print(f"Verified safe stable upgrade: {old} -> {new}")
+          PY
+
+      - name: Publish immutable LibreBuds+ v1.1.0 GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.LIBREBUDS_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view v1.1.0 >/dev/null 2>&1; then
+            echo "::error::v1.1.0 exists; refusing to overwrite a published release."
+            exit 1
+          fi
+          gh release create v1.1.0 \
+            "$RUNNER_TEMP/stable/librebuds-plus-v1.1.0.apk#librebuds-plus-v1.1.0.apk" \
+            "$RUNNER_TEMP/stable/librebuds-plus-v1.1.0.apk.sha256#librebuds-plus-v1.1.0.apk.sha256" \
+            --target ce789fed351bd8435fa7a7644c55732f015c6cb4 \
+            --title "LibreBuds+ v1.1.0 — Stable" \
+            --notes-file RELEASE_NOTES_v1.1.0.md \
+            --latest
