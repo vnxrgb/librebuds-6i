@@ -134,9 +134,13 @@ jobs:
           base=pathlib.Path(os.environ['RUNNER_TEMP'])
           def cert(name):
               output=(base/name).read_text()
-              match=re.search(r'Signer #1 certificate SHA-256 digest:\s*([0-9A-Fa-f]+)', output)
-              if not match: raise SystemExit(f'Missing signing certificate fingerprint: {name}')
-              return match.group(1).lower()
+              # Android SDK variants format the certificate digest label differently.
+              # Require a full SHA-256 fingerprint: never silently skip cert matching.
+              matches=re.findall(r'(?im)^.*(?:certificate|cert).*?sha[- ]?256[^\\n]*?([0-9a-fA-F]{64})(?:\\b|$)',output)
+              if not matches:
+                  # These are public signing-certificate details, not keystore secrets.
+                  raise SystemExit(f'No SHA-256 signing certificate digest in {name}; apksigner output:\\n{output[:2200]}')
+              return matches[0].lower()
           def version(name):
               output=(base/name).read_text()
               match=re.search(r"^package: name='([^']+)' versionCode='(\d+)' versionName='([^']+)'",output,re.M)
