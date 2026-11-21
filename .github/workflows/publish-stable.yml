@@ -1,7 +1,9 @@
 name: Publish signed stable APK
 
-# Manually publish once the owner has confirmed the signing secrets.
+# Trigger once with corrected signing secrets, guarded against duplicate v1.0.0 release.
 on:
+  push:
+    branches: [release/stable-v1.0.0]
   workflow_dispatch:
 
 permissions:
