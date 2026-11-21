@@ -1,9 +1,7 @@
 name: Publish signed stable APK
 
-# Only the dedicated release branch may publish; regular main pushes never release.
+# Manual-only: publish after the owner adds signing secrets.
 on:
-  push:
-    branches: [release/stable-v1.0.0]
   workflow_dispatch:
 
 permissions:
