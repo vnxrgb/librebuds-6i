@@ -116,33 +116,35 @@ jobs:
           fi
           echo "Verified LibreBuds 6i fork signing certificate fingerprint."
 
-          # Users of the legacy Stable APK need a clean installation: signatures differ.
-          # Still ensure the package ID and versionCode progress from that older build.
-          mkdir -p "$RUNNER_TEMP/old-stable"
-          gh release download Stable --pattern librebuds.apk --dir "$RUNNER_TEMP/old-stable"
-          previous="$RUNNER_TEMP/old-stable/librebuds.apk"
-          test -s "$previous"
-
+          # Legacy Stable may have been deleted. Its original signature is
+          # incompatible with this new fork signing lineage in either case.
           "$aapt" dump badging "$candidate" > "$RUNNER_TEMP/new-badging.txt"
-          "$aapt" dump badging "$previous" > "$RUNNER_TEMP/old-badging.txt"
+          if gh release view Stable >/dev/null 2>&1; then
+            mkdir -p "$RUNNER_TEMP/old-stable"
+            gh release download Stable --pattern librebuds.apk --dir "$RUNNER_TEMP/old-stable"
+            previous="$RUNNER_TEMP/old-stable/librebuds.apk"
+            if [ -s "$previous" ]; then
+              "$aapt" dump badging "$previous" > "$RUNNER_TEMP/old-badging.txt"
+            fi
+          fi
+
           python3 - <<'PY'
           import os, pathlib, re
           root = pathlib.Path(os.environ["RUNNER_TEMP"])
           def package_info(file):
               text = (root / file).read_text()
-              match = re.search(r"^package: name='([^']+)' versionCode='(\d+)' versionName='([^']+)'", text, re.MULTILINE)
+              match = re.search(r"^package: name='([^']+)' versionCode='(\\d+)' versionName='([^']+)'", text, re.MULTILINE)
               if not match:
                   raise SystemExit(f"Cannot read APK metadata from {file}")
               return match.group(1), int(match.group(2)), match.group(3)
-          old = package_info("old-badging.txt")
           new = package_info("new-badging.txt")
-          if old[0] != new[0]:
-              raise SystemExit(f"Package name differs: {old[0]} -> {new[0]}")
-          if new[1] <= old[1]:
-              raise SystemExit(f"versionCode must increase: {old[1]} -> {new[1]}")
-          if new[2] != "1.0.0":
-              raise SystemExit(f"Unexpected release versionName: {new[2]}")
-          print(f"Verified new-signing-lineage release: {old[1]} -> {new[1]} ({new[2]}). Clean install required for users of the old Stable key.")
+          if new != ("io.github.librebuds", 20, "1.0.0"):
+              raise SystemExit(f"Unexpected release package, versionCode or versionName: {new}")
+          if (root / "old-badging.txt").exists():
+              old = package_info("old-badging.txt")
+              if old[0] != new[0] or new[1] <= old[1]:
+                  raise SystemExit("New APK does not increment the prior Stable release version")
+          print("Verified LibreBuds 6i v1.0.0; previous signing identity requires clean install.")
           PY
 
           cp "$candidate" "$RUNNER_TEMP/librebuds.apk"
