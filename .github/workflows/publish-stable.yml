@@ -113,7 +113,7 @@ jobs:
           fi
 
           "$apksigner" verify --print-certs "$candidate" > "$RUNNER_TEMP/new-certificate.txt"
-          new_cert="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/new-certificate.txt" | head -n 1)"
+          new_cert="$(awk '/certificate SHA-256 digest:/ { print $NF; exit }' "$RUNNER_TEMP/new-certificate.txt")"
           if [ -z "$new_cert" ]; then
             echo "::error::APK signature verified but no signer certificate digest was printed."
             sed -n '1,12p' "$RUNNER_TEMP/new-certificate.txt"
@@ -123,7 +123,7 @@ jobs:
           # The fork intentionally starts a NEW signing lineage with v1.0.0.
           # Pin this public certificate fingerprint to prevent a mistakenly supplied key
           # from becoming the permanent signing identity of future releases.
-          expected_cert="d71be050b3c96de6634a1a136126ae788ef8ad35efea8fb98858c35fc8d85d6"
+          expected_cert="d71be050b3c96de6634a1a136126ae788ef8ad35efea8fb98858c35fc88d85d6"
           normalized_cert="$(printf '%s' "$new_cert" | tr '[:upper:]' '[:lower:]' | tr -cd '0-9a-f')"
           if [ "$normalized_cert" != "$expected_cert" ]; then
             echo "::error::APK does not use the intended LibreBuds 6i fork release-signing certificate."
