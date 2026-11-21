@@ -1,0 +1,166 @@
+name: LibreBuds+ alpha APK and prerelease
+
+on:
+  push:
+    branches:
+      - alpha/librebuds-plus
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: librebuds-plus-alpha
+  cancel-in-progress: false
+
+jobs:
+  alpha:
+    name: Test, build and publish isolated alpha
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Configure and validate alpha signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.LIBREBUDS_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.LIBREBUDS_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.LIBREBUDS_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.LIBREBUDS_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${KEYSTORE_B64:-}" && -n "${STORE_PASSWORD:-}" && -n "${KEY_PASSWORD:-}" ]]; then
+            printf '%s' "$KEYSTORE_B64" | base64 --decode > android/alpha-keystore.jks
+            chmod 600 android/alpha-keystore.jks
+
+            # Only private-key entries can sign an APK. Keep aliases and passwords
+            # out of GitHub logs; a single entry can resolve an outdated alias.
+            if ! listing=$(keytool -list -v -keystore android/alpha-keystore.jks -storepass "$STORE_PASSWORD" 2>&1); then
+              echo "::error::Unable to read the alpha keystore with the configured store password."
+              exit 1
+            fi
+            mapfile -t signing_aliases < <(
+              printf '%s\n' "$listing" | awk '
+                /^Alias name: / { alias = substr($0, 13) }
+                /^Entry type: PrivateKeyEntry/ { if (alias != "") print alias }
+              '
+            )
+            unset listing
+            if (( ${#signing_aliases[@]} == 0 )); then
+              echo "::error::The alpha keystore contains no usable private signing keys."
+              exit 1
+            fi
+            selected_alias=''
+            for candidate in "${signing_aliases[@]}"; do
+              if [[ -n "${KEY_ALIAS:-}" && "$candidate" == "$KEY_ALIAS" ]]; then
+                selected_alias="$candidate"
+                break
+              fi
+            done
+            if [[ -z "$selected_alias" ]]; then
+              if (( ${#signing_aliases[@]} == 1 )); then
+                selected_alias="${signing_aliases[0]}"
+                echo "::notice::Configured alias was absent; using the keystore's sole private signing key."
+              else
+                echo "::error::Configured alias not found and the keystore has multiple private keys. Set LIBREBUDS_KEY_ALIAS to the correct entry."
+                exit 1
+              fi
+            fi
+            echo "::add-mask::$selected_alias"
+            {
+              printf 'RELEASE_STORE_FILE=alpha-keystore.jks\n'
+              printf 'RELEASE_STORE_PASSWORD=%s\n' "$STORE_PASSWORD"
+              printf 'RELEASE_KEY_ALIAS=%s\n' "$selected_alias"
+              printf 'RELEASE_KEY_PASSWORD=%s\n' "$KEY_PASSWORD"
+            } > android/keystore.properties
+            chmod 600 android/keystore.properties
+            echo 'ALPHA_SIGNING=fork-release-key' >> "$GITHUB_ENV"
+          elif [[ -z "${KEYSTORE_B64:-}" && -z "${STORE_PASSWORD:-}" && -z "${KEY_ALIAS:-}" && -z "${KEY_PASSWORD:-}" ]]; then
+            echo 'ALPHA_SIGNING=debug-test-key' >> "$GITHUB_ENV"
+            echo 'No release-signing secrets configured; alpha will use the CI debug key.'
+          else
+            echo "::error::Incomplete signing configuration; set all keystore/password secrets or remove all of them for a debug-signed alpha."
+            exit 1
+          fi
+
+      # The alpha build type is a release-derived installable variant.
+      # AGP does not register a unit-test task for every custom build type by default.
+      # Run the existing debug unit-test suite against the same application source,
+      # then build and verify the separately packaged alpha APK below.
+      - name: Run shared source unit tests
+        working-directory: android
+        run: ./gradlew :app:testDebugUnitTest --no-daemon
+
+      - name: Build installable alpha APK
+        working-directory: android
+        run: ./gradlew :app:assembleAlpha --no-daemon
+
+      - name: Verify alpha is separate from stable
+        run: |
+          set -euo pipefail
+          candidate=android/app/build/outputs/apk/alpha/app-alpha.apk
+          test -s "$candidate"
+          aapt="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          "$apksigner" verify "$candidate"
+          "$aapt" dump badging "$candidate" | tee "$RUNNER_TEMP/alpha-badging.txt"
+          grep -q "package: name='io.github.librebuds.alpha'" "$RUNNER_TEMP/alpha-badging.txt"
+          grep -q "versionName='1.1.0-alpha.1'" "$RUNNER_TEMP/alpha-badging.txt"
+          cp "$candidate" "$RUNNER_TEMP/librebuds-plus-alpha.apk"
+          (cd "$RUNNER_TEMP" && sha256sum librebuds-plus-alpha.apk > librebuds-plus-alpha.apk.sha256)
+
+      - name: Clean up signing key
+        if: always()
+        run: rm -f android/alpha-keystore.jks android/keystore.properties
+
+      - name: Upload downloadable alpha test artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: librebuds-plus-alpha-apk
+          path: |
+            ${{ runner.temp }}/librebuds-plus-alpha.apk
+            ${{ runner.temp }}/librebuds-plus-alpha.apk.sha256
+          if-no-files-found: error
+
+      - name: Publish GitHub prerelease (never latest/stable)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/alpha/librebuds-plus'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="v1.1.0-alpha.${GITHUB_RUN_NUMBER}"
+          cat > "$RUNNER_TEMP/alpha-notes.md" <<EOF
+          # LibreBuds+ experimental alpha
+          
+          Commit: \`${GITHUB_SHA}\`
+          Android package: \`io.github.librebuds.alpha\` (installs alongside stable \`io.github.librebuds\`)
+          Version: \`1.1.0-alpha.1\`
+          Signing: \`${ALPHA_SIGNING}\`
+          
+          **Experimental:** FreeBuds 6i remains on the original backend. PairFree multi-brand adapters
+          are unverified across most models; the TOZO A/J adapter is battery-only and not
+          physically validated. See docs/MULTIBRAND_COMPATIBILITY.md.
+          
+          This is a prerelease, not a stable upgrade. Debug-test-key APKs may not update
+          builds signed by the repository's release key; uninstall the previous alpha
+          (not the stable app) if Android reports a signature mismatch.
+          EOF
+          gh release create "$tag" \
+            "$RUNNER_TEMP/librebuds-plus-alpha.apk#librebuds-plus-alpha.apk" \
+            "$RUNNER_TEMP/librebuds-plus-alpha.apk.sha256#librebuds-plus-alpha.apk.sha256" \
+            --target "$GITHUB_SHA" \
+            --title "LibreBuds+ $tag — Alpha" \
+            --notes-file "$RUNNER_TEMP/alpha-notes.md" \
+            --prerelease

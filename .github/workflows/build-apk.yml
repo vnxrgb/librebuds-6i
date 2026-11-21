@@ -8,12 +8,19 @@ on:
   pull_request:
     branches: [main]
 
+# On a rapidly evolving experimental branch, build only the newest commit.
+concurrency:
+  group: debug-apk-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - uses: actions/setup-java@v5
         with:
@@ -30,6 +37,10 @@ jobs:
       - name: Build debug APK
         working-directory: android
         run: ./gradlew :app:assembleDebug --no-daemon
+
+      - name: Test additional earbud model recognition
+        working-directory: android
+        run: ./gradlew :app:testDebugUnitTest --tests io.github.librebuds.ui.other.OtherEarbudsCatalogTest --tests io.github.librebuds.ui.other.NothingProtocolTest --tests io.github.librebuds.ui.other.PairFreeCompatibilityTest --no-daemon
 
       - uses: actions/upload-artifact@v4
         with:

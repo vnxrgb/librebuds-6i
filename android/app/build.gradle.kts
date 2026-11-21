@@ -35,8 +35,8 @@ android {
         applicationId = "io.github.librebuds"
         minSdk = 33
         targetSdk = 37
-        versionCode = 20
-        versionName = "1.0.0"
+        versionCode = 21
+        versionName = "1.1.0"
         buildConfigField("String", "BUILD_COMMIT", "\"$buildCommit\"")
     }
 
@@ -58,6 +58,17 @@ android {
         release {
             isMinifyEnabled = false
             signingConfig = signingConfigs.findByName("release")
+        }
+        // Installs alongside stable, with its own app data and package identity.
+        create("alpha") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".alpha"
+            versionNameSuffix = "-alpha.1"
+            // For local/test CI builds use the Android debug key. When the stable
+            // fork keystore is supplied, alpha APKs use that key instead.
+            signingConfig = signingConfigs.findByName("release")
+                ?: signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
         }
     }
 
@@ -99,7 +110,17 @@ androidComponents {
     }
 }
 
+// PairFree transport code lives in the submodule's app source tree.
+// Android's built-in Kotlin compilation needs a Kotlin source root, not a
+// java source root, to include these Bluetooth adapter classes.
+android.sourceSets.named("main") {
+    kotlin.srcDir("../../third_party/PairFree/android/app/src/main/kotlin/io/github/omegadestroyer/pairfree/bluetooth")
+}
+
 dependencies {
+    implementation("io.github.omegadestroyer:pairfree-core:1.0")
+    implementation("org.lsposed.hiddenapibypass:hiddenapibypass:4.3")
+
     implementation(project(":protocol"))
 
     implementation(platform(libs.androidx.compose.bom))

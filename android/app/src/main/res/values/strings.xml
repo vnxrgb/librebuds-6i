@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">LibreBuds</string>
+    <string name="app_name">LibreBuds+</string>
     <string name="noise_control">Noise control</string>
     <string name="off">Off</string>
     <string name="noise_cancellation">Noise cancellation</string>
@@ -20,7 +20,7 @@
     <string name="settings">Settings</string>
     <string name="not_connected">Not connected</string>
     <string name="welcome">Welcome</string>
-    <string name="onboarding_intro">LibreBuds shows battery and noise control for your earbuds. No root needed.</string>
+    <string name="onboarding_intro">LibreBuds+ shows battery and noise control for your earbuds. No root needed.</string>
     <string name="continue_action">Continue</string>
     <string name="grant">Grant</string>
     <string name="granted">Granted</string>
@@ -75,7 +75,7 @@
     <string name="export_diagnostics">Export diagnostics</string>
     <string name="share_diagnostics">Share diagnostics</string>
     <string name="save_diagnostics_to_file">Save diagnostics to file</string>
-    <string name="diagnostics_subject">LibreBuds diagnostics</string>
+    <string name="diagnostics_subject">LibreBuds+ diagnostics</string>
     <string name="island_connected_text">Connected</string>
     <string name="island_taking_over_text">Connected</string>
     <string name="island_moved_to_remote_text">Moved to another device</string>
@@ -239,4 +239,20 @@
     <string name="quick_wear_detection">Auto pause</string>
     <string name="quick_multipoint">Multipoint</string>
     <string name="quick_manage">Manage devices</string>
+    <string name="other_battery_unknown">Android has not reported a battery percentage for this audio device.</string>
+    <string name="other_connected_audio">Bluetooth audio connection</string>
+    <string name="other_controls_note_title">Device controls</string>
+    <string name="other_controls_note">This device is recognized as Bluetooth audio. ANC, EQ, gestures and case battery require a verified brand-specific control protocol; they are not available here yet. Android Bluetooth settings remain available.</string>
+    <string name="other_brand">Brand</string>
+    <string name="other_generic">Generic Bluetooth audio</string>
+    <string name="other_support_source">Device identification</string>
+    <string name="other_pairfree_credit">Model names adapted from PairFree (Omega-Destroyer), GPL-3.0. Model recognition does not imply that proprietary controls are implemented.</string>
+    <string name="other_media_volume">Media volume</string>
+    <string name="other_media_volume_note">Changes Android media volume for the current audio output, not a proprietary earbud setting.</string>
+    <string name="other_vendor_link">Vendor Bluetooth controls (experimental)</string>
+    <string name="other_eq_presets">Earbud EQ presets</string>
+    <string name="other_playback">Media playback</string>
+    <string name="other_previous">Previous</string>
+    <string name="other_play_pause">Play/Pause</string>
+    <string name="other_next">Next</string>
 </resources>
