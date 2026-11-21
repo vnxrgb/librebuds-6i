@@ -1,0 +1,59 @@
+name: Remove audited redundant feature branches
+
+# One-shot maintenance for the 14 feature branches explicitly approved for cleanup.
+# The exact expected tip SHA for each branch prevents deleting any new work.
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/prune-approved-feature-branches.yml
+
+permissions:
+  contents: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove only unchanged and unprotected feature branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == "vnxrgb/librebudsplus" ]] || exit 1
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || exit 1
+          targets=(
+            "feature/freebuds-6i-native-settings|de5767c5d97cc4e2e60854a91865dab7a2a728c0"
+            "feature/one-ui-amoled-theme|97bae8b259f0f5615aa0a8cae07479207560ff01"
+            "feature/one-ui-quickbuds-finished|49c3505d92ce5831121b5e6ce7fc2bb368a29da9"
+            "feature/one-ui-quickbuds-polish|97bae8b259f0f5615aa0a8cae07479207560ff01"
+            "feature/pairfree-broad-earbuds-foundation|3f79b44da511fb0df44c75cd29603296b91ee2d5"
+            "feature/pairfree-native-multibrand-engine|c575335b0b95ba404232168259311ce9135a7e19"
+            "feature/pairfree-real-protocol-nothing|82f867c903ed4e615b048b1c72bad045c97b19d6"
+            "feature/premium-alignment-polish|6a189c959c591ad473d480bccb7f975f79e9de7f"
+            "feature/premium-freebuds-ui|474728d604ef571a787ae3847f9f6278848aa42e"
+            "feature/quick-controls-audio-polish|5f4be9a2341c766a97a88306d206fbd4bf3acc9b"
+            "feature/quickbuds-compact-density|b7ab5928a448badfa54b8050842cab3271e7b724"
+            "feature/quickbuds-experience-suite|af5a7cebaa1d64d12b99f09f046e012db3f469e8"
+            "feature/quickbuds-native-redesign|cd47fffb2026904263a819b9df7f10c8b3b290ea"
+            "feature/quickbuds-only-default-theme|1831e1b7df80fc067bc0edb86349bed0f4ebb1ba"
+          )
+          for item in "${targets[@]}"; do
+            name="${item%%|*}"
+            expected="${item#*|}"
+            [[ "$name" == feature/* ]] || exit 1
+            details="$(gh api "repos/$GITHUB_REPOSITORY/branches/$name" 2>/dev/null)" || {
+              echo "::notice::Branch already absent: $name"
+              continue
+            }
+            current="$(jq -r '.commit.sha' <<< "$details")"
+            protected="$(jq -r '.protected' <<< "$details")"
+            if [[ "$current" != "$expected" || "$protected" != "false" ]]; then
+              echo "::error::Refusing deletion of $name, which changed or became protected."
+              exit 1
+            fi
+            echo "Deleting vetted redundant branch $name (head $current)"
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$name"
+          done
+          echo "Feature branch cleanup complete; main and alpha are untouched."
