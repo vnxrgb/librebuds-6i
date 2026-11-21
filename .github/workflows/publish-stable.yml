@@ -133,7 +133,7 @@ jobs:
           root = pathlib.Path(os.environ["RUNNER_TEMP"])
           def package_info(file):
               text = (root / file).read_text()
-              match = re.search(r"^package: name='([^']+)' versionCode='(\\d+)' versionName='([^']+)'", text, re.MULTILINE)
+              match = re.search(r"^package: name='([^']+)' versionCode='(\d+)' versionName='([^']+)'", text, re.MULTILINE)
               if not match:
                   raise SystemExit(f"Cannot read APK metadata from {file}")
               return match.group(1), int(match.group(2)), match.group(3)
