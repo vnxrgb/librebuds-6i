@@ -1,7 +1,9 @@
 name: Publish signed stable APK
 
-# Manual-only: prevent accidental public releases from an ordinary push.
+# Only the dedicated release branch may publish; regular main pushes never release.
 on:
+  push:
+    branches: [release/stable-v1.0.0]
   workflow_dispatch:
 
 permissions:
@@ -122,7 +124,7 @@ jobs:
           PY
 
           cp "$candidate" "$RUNNER_TEMP/librebuds.apk"
-          sha256sum "$RUNNER_TEMP/librebuds.apk" > "$RUNNER_TEMP/librebuds.apk.sha256"
+          (cd "$RUNNER_TEMP" && sha256sum librebuds.apk > librebuds.apk.sha256)
 
       - name: Remove temporary signing material
         if: always()
