@@ -98,14 +98,27 @@ jobs:
           candidate="android/app/build/outputs/apk/release/app-release.apk"
           test -s "$candidate"
 
-          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
-          aapt="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
-          test -x "$apksigner"
-          test -x "$aapt"
+          # Android SDK executables may be symlinks; accept regular files and links.
+          apksigner="$(find "$ANDROID_HOME/build-tools" \( -type f -o -type l \) -name apksigner | sort -V | tail -n 1)"
+          aapt="$(find "$ANDROID_HOME/build-tools" \( -type f -o -type l \) -name aapt | sort -V | tail -n 1)"
+          if [ -z "$apksigner" ] || [ ! -x "$apksigner" ]; then
+            echo "::error::Android apksigner not found in SDK build-tools."
+            find "$ANDROID_HOME/build-tools" -maxdepth 2 -name 'apksigner*' -print
+            exit 1
+          fi
+          if [ -z "$aapt" ] || [ ! -x "$aapt" ]; then
+            echo "::error::Android aapt not found in SDK build-tools."
+            find "$ANDROID_HOME/build-tools" -maxdepth 2 -name 'aapt*' -print
+            exit 1
+          fi
 
           "$apksigner" verify --print-certs "$candidate" > "$RUNNER_TEMP/new-certificate.txt"
           new_cert="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/new-certificate.txt" | head -n 1)"
-          test -n "$new_cert"
+          if [ -z "$new_cert" ]; then
+            echo "::error::APK signature verified but no signer certificate digest was printed."
+            sed -n '1,12p' "$RUNNER_TEMP/new-certificate.txt"
+            exit 1
+          fi
 
           # The fork intentionally starts a NEW signing lineage with v1.0.0.
           # Pin this public certificate fingerprint to prevent a mistakenly supplied key
