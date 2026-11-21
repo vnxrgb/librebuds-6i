@@ -12,6 +12,8 @@ The first versioned stable-release candidate of the FreeBuds 6i-focused fork.
 - AMOLED black theme and Mint / Ocean blue / Violet / Coral accents.
 - Updated README, screenshots and acknowledgments to upstream LibreBuds and QuickBuds.
 
+For the complete list of changes, see [CHANGELOG.md](https://github.com/vnxrgb/librebuds-6i/blob/v1.0.0/CHANGELOG.md).
+
 ## Compatibility
 - Android 13 or newer.
 - FreeBuds 6i support, with other supported models retaining their existing model-specific controls.
