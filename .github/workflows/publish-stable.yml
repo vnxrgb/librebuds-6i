@@ -73,7 +73,7 @@ jobs:
         working-directory: android
         run: ./gradlew :app:assembleRelease --no-daemon
 
-      - name: Verify APK signature and upgrade compatibility
+      - name: Verify new fork signature and version
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -90,16 +90,23 @@ jobs:
           new_cert="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/new-certificate.txt" | head -n 1)"
           test -n "$new_cert"
 
+          # The fork intentionally starts a NEW signing lineage with v1.0.0.
+          # Pin this public certificate fingerprint to prevent a mistakenly supplied key
+          # from becoming the permanent signing identity of future releases.
+          expected_cert="d71be050b3c96de6634a1a136126ae788ef8ad35efea8fb98858c35fc8d85d6"
+          normalized_cert="$(printf '%s' "$new_cert" | tr '[:upper:]' '[:lower:]' | tr -cd '0-9a-f')"
+          if [ "$normalized_cert" != "$expected_cert" ]; then
+            echo "::error::APK does not use the intended LibreBuds 6i fork release-signing certificate."
+            exit 1
+          fi
+          echo "Verified LibreBuds 6i fork signing certificate fingerprint."
+
+          # Users of the legacy Stable APK need a clean installation: signatures differ.
+          # Still ensure the package ID and versionCode progress from that older build.
           mkdir -p "$RUNNER_TEMP/old-stable"
           gh release download Stable --pattern librebuds.apk --dir "$RUNNER_TEMP/old-stable"
           previous="$RUNNER_TEMP/old-stable/librebuds.apk"
-          "$apksigner" verify --print-certs "$previous" > "$RUNNER_TEMP/old-certificate.txt"
-          old_cert="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/old-certificate.txt" | head -n 1)"
-          test -n "$old_cert"
-          if [ "$new_cert" != "$old_cert" ]; then
-            echo "::error::Signing certificate mismatch with the current Stable APK. Refusing to publish an incompatible update."
-            exit 1
-          fi
+          test -s "$previous"
 
           "$aapt" dump badging "$candidate" > "$RUNNER_TEMP/new-badging.txt"
           "$aapt" dump badging "$previous" > "$RUNNER_TEMP/old-badging.txt"
@@ -120,7 +127,7 @@ jobs:
               raise SystemExit(f"versionCode must increase: {old[1]} -> {new[1]}")
           if new[2] != "1.0.0":
               raise SystemExit(f"Unexpected release versionName: {new[2]}")
-          print(f"Verified signed update: {old[1]} -> {new[1]} ({new[2]})")
+          print(f"Verified new-signing-lineage release: {old[1]} -> {new[1]} ({new[2]}). Clean install required for users of the old Stable key.")
           PY
 
           cp "$candidate" "$RUNNER_TEMP/librebuds.apk"
