@@ -1,0 +1,50 @@
+name: Remove four approved legacy branches
+
+# One-shot maintenance: triggered only when THIS workflow itself is committed.
+# Exact branch names and exact expected tip SHAs guard against deleting new work.
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/prune-approved-legacy-branches.yml
+
+permissions:
+  contents: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete only approved unprotected branches if unchanged
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${GITHUB_REPOSITORY:?}"
+          [[ "$GITHUB_REPOSITORY" == "vnxrgb/librebudsplus" ]] || exit 1
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || exit 1
+          targets=(
+            "docs/final-fork-readme-screenshots|6c8bc6f139c5f088a666e908661f652cb2bd5b6a"
+            "docs/v1.0.0-changelog|8eafe2b7711874c4434872ec000dc0a29f3f2e5d"
+            "fix/freebuds-6i-polish|573451be1d44b7a608b866af574a3a01ce4e4848"
+            "release/stable-v1.0.0|3abf04ad2322a8608b86e95679408ca6621eb8c7"
+          )
+          for item in "${targets[@]}"; do
+            name="${item%%|*}"
+            expected="${item#*|}"
+            ref="heads/$name"
+            details="$(gh api "repos/$GITHUB_REPOSITORY/branches/$name" 2>/dev/null)" || {
+              echo "::warning::Branch $name is already absent, skipping"
+              continue
+            }
+            current="$(jq -r '.commit.sha' <<< "$details")"
+            protected="$(jq -r '.protected' <<< "$details")"
+            if [[ "$current" != "$expected" || "$protected" != "false" ]]; then
+              echo "::error::Refusing to delete $name: branch changed or protected"
+              exit 1
+            fi
+            echo "Deleting approved branch: $name (head $current)"
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/$ref"
+          done
+          echo "Approved branch cleanup completed."
