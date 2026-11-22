@@ -19,7 +19,7 @@ model-aware controls and a refined companion-app experience.
 
 **[Download stable APK](https://github.com/vnxrgb/librebudsplus/releases/latest)** ·
 **[Huawei device support](#huawei-device-support)** ·
-**[What makes this fork different](#what-makes-this-fork-different)** ·
+**[What's different](#built-for-huawei-shaped-by-this-fork)** ·
 **[Build it](#build-from-source)**
 
 </div>
