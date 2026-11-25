@@ -27,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +62,9 @@ fun MultipointScreen(viewModel: SettingsViewModel, onNavigateBack: () -> Unit, b
     val experimental = stringResource(R.string.experimental).takeIf { "multipoint" in ui.model.experimental }
     // Without a session every action would fail: show why and offer none.
     val connected = ui.state.isConnected
+    LaunchedEffect(connected, ui.state.address) {
+        if (connected) viewModel.refreshHosts()
+    }
 
     StyledScaffold(
         title = stringResource(R.string.section_multipoint),

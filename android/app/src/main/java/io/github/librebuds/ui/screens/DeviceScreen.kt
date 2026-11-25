@@ -147,6 +147,28 @@ fun DeviceScreen(
                     onTakeOver = viewModel::takeOver
                 )
             }
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(stringResource(R.string.phone_link_status, stringResource(
+                        if (pair.connected || (current && ui.state.isConnected)) R.string.buds_connected else R.string.not_connected
+                    )), style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.control_link_status, stringResource(
+                        if (!current) R.string.not_connected else when (ui.state.link) {
+                            LinkState.CONNECTED -> R.string.buds_connected
+                            LinkState.CONNECTING -> R.string.connecting
+                            LinkState.TAKEN_OVER -> R.string.controlled_by_other
+                            LinkState.DISCONNECTED -> R.string.not_connected
+                        }
+                    )), style = MaterialTheme.typography.bodySmall)
+                }
+            }
             if (!current) return@Column
             // A clear three-part product interface replaces one endless settings page.
             PremiumSegmentedTabs(

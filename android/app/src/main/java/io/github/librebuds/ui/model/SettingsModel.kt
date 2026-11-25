@@ -113,7 +113,11 @@ data class LanguageRow(val current: String?)
 fun settingsModel(profile: Profile, state: BudsState): SettingsModel {
     val settings = state.settings
     fun shown(key: String, capability: String = key) =
-        profile.supports(capability) && key !in settings.unanswered && key !in settings.unsupported
+        (profile.supports(capability) || (profile.id == "generic" && when (capability) {
+            "lowLatency" -> settings.lowLatencyDynamic != null && settings.lowLatency != null
+            "language" -> settings.language?.let { it.current != null || it.supported.isNotEmpty() } == true
+            else -> false
+        })) && key !in settings.unanswered && key !in settings.unsupported
     return SettingsModel(
         wear = settings.wearDetection?.takeIf { shown("wear") },
         gestures = gestureControls(profile, state),

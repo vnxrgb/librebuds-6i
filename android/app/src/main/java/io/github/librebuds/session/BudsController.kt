@@ -106,6 +106,7 @@ class BudsController(
 ) : BudsRepository {
     private val mutable = MutableStateFlow(initial)
     private val connectLock = Mutex()
+    private val hostRefreshLock = Mutex()
 
     // Bumped by every connect() attempt and by disconnect(), so a connect() that resumes after a
     // disconnect() (or a newer connect()) recognizes it is stale and stops touching state.
@@ -247,13 +248,13 @@ class BudsController(
             if (!read(gestureKey(entry.key), Gestures.read(entry.gesture, entry.inCall))) return
         }
         if (profile.supports("equalizer") && !read("equalizer", Equalizer.read())) return
-        if (profile.supports("lowLatency")) {
+        if (profile.supports("lowLatency") || profile.id == "generic") {
             // The vendor app's support query comes first, on its own: no TLV 3 means no such setting.
             val probe = request("lowLatency", LowLatency.probe()) ?: return
             val variant = probe.getOrNull()?.let(LowLatency::parseSupport)
             if (variant == null) {
                 if (probe.isSuccess) unsupported("lowLatency")
-            } else {
+            } else if (variant in 0..1) {
                 updateSettings { it.copy(lowLatencyDynamic = variant == 1) }
                 if (!read("lowLatency", LowLatency.read())) return
             }
@@ -263,7 +264,7 @@ class BudsController(
             // The switch exists only with a capability of 1 or more on TLV 1.
             reply.getOrNull()?.let { packet -> if ((SoundQuality.parseCapability(packet) ?: 0) < 1) unsupported("soundQuality") }
         }
-        if (profile.supports("language") && !read("language", VoiceLanguage.read())) return
+        if ((profile.supports("language") || profile.id == "generic") && !read("language", VoiceLanguage.read())) return
         if (profile.supports("multipoint")) {
             if (!read("multipoint", Multipoint.readToggle())) return
             if ("multipoint" !in mutable.value.settings.unanswered) refreshHosts()
@@ -472,19 +473,20 @@ class BudsController(
      * Re-enumerates hosts. If no row at all arrives within [hostListMillis] while hosts are already
      * known, the known list is kept and the refresh fails with [RequestTimeoutException].
      */
-    override suspend fun refreshHosts(): Result<List<HostRow>> {
-        val current = session ?: return Result.failure(NotConnectedException())
-        if (!profile.supports("multipoint")) return Result.failure(UnsupportedOperationException())
+    override suspend fun refreshHosts(): Result<List<HostRow>> = hostRefreshLock.withLock {
+        val current = session ?: return@withLock Result.failure(NotConnectedException())
+        if (!profile.supports("multipoint")) return@withLock Result.failure(UnsupportedOperationException())
         hostCollector.reset()
         val seen = completedHostLists.value
-        sendWrite(current, Multipoint.enumerate()).getOrElse { return Result.failure(it) }
+        sendWrite(current, Multipoint.enumerate()).getOrElse { return@withLock Result.failure(it) }
         val complete = withTimeoutOrNull(hostListMillis) { completedHostLists.first { it > seen } }
-        if (session !== current || current.closed.isCompleted) return Result.failure(SessionClosedException())
-        if (complete != null) return Result.success(mutable.value.hosts)
+        if (session !== current || current.closed.isCompleted) return@withLock Result.failure(SessionClosedException())
+        if (complete != null) return@withLock Result.success(mutable.value.hosts)
         val partial = hostCollector.partial()
-        if (partial.isEmpty() && mutable.value.hosts.isNotEmpty()) return Result.failure(RequestTimeoutException(Multipoint.ENUMERATE))
+        // Never replace a complete snapshot with a truncated enumeration.
+        if (mutable.value.hosts.isNotEmpty() || partial.isEmpty()) return@withLock Result.failure(RequestTimeoutException(Multipoint.ENUMERATE))
         mutable.update { it.copy(hosts = partial, updatedAtMillis = clock()) }
-        return Result.success(partial)
+        Result.failure(RequestTimeoutException(Multipoint.ENUMERATE))
     }
 
     /** The host command's packet, or null when its MAC cannot be encoded. */
@@ -514,7 +516,7 @@ class BudsController(
             is SettingChange.HdCallChange -> "hdCall"
             is SettingChange.PickupModeChange -> "pickupMode"
         }
-        return key.takeIf { profile.supports(it) }
+        return key.takeIf { profile.supports(it) || (profile.id == "generic" && it == "lowLatency" && mutable.value.settings.lowLatencyDynamic != null && mutable.value.settings.lowLatency != null) }
     }
 
     private fun bothSides(gesture: Gesture): Boolean =
@@ -891,7 +893,10 @@ class BudsController(
         }
         if (Multipoint.isChange(packet) && profile.supports("multipoint")) {
             hostPushJob?.cancel()
-            hostPushJob = scope.launch { refreshHosts() }
+            hostPushJob = scope.launch {
+                delay(300)
+                refreshHosts()
+            }
         }
     }
 

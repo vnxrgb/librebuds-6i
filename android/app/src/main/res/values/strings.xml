@@ -255,4 +255,6 @@
     <string name="other_previous">Previous</string>
     <string name="other_play_pause">Play/Pause</string>
     <string name="other_next">Next</string>
+    <string name="phone_link_status">Phone connection: %1$s</string>
+    <string name="control_link_status">App controls: %1$s</string>
 </resources>
