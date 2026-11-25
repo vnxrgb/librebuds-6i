@@ -25,6 +25,7 @@ import io.github.librebuds.popup.demoPopupModel
 import io.github.librebuds.state.AppPreferences
 import io.github.librebuds.state.DEMO_ADDRESS
 import io.github.librebuds.ui.screens.DeviceScreen
+import io.github.librebuds.ui.screens.BoatScreen
 import io.github.librebuds.ui.screens.HomeScreen
 import io.github.librebuds.ui.screens.MultipointScreen
 import io.github.librebuds.ui.screens.SettingsScreen
@@ -128,7 +129,7 @@ fun AppRoot(
                 is Route.Device -> {
                     // Before detection read the pair again (or for the frame before a gone pair closes).
                     val pair = rowOf(top.address) ?: PairRow(top.address, top.name, model = null, connected = false, battery = null)
-                    DeviceScreen(
+                    if (pair.boat) BoatScreen(pair, backLabel() ?: homeTitle, goBack) else DeviceScreen(
                         viewModel = viewModel,
                         settingsViewModel = settingsViewModel,
                         showOffMode = showOffMode,
@@ -182,10 +183,10 @@ fun AppRoot(
                         },
                         overlay = overlay,
                         onOpenAppInfo = { openAppDetailsSettings(context) },
-                        companionPair = selected?.takeIf { it.address != DEMO_ADDRESS }?.label,
+                        companionPair = selected?.takeIf { it.address != DEMO_ADDRESS && !it.boat }?.label,
                         companionLinked = selected?.address?.uppercase() in companionLinked,
                         onLinkCompanion = {
-                            selected?.let { pair ->
+                            selected?.takeUnless { it.boat }?.let { pair ->
                                 onLinkCompanion(pair.address, pair.name) { linked ->
                                     if (linked) companionLinked = AssociationStore(context).known()
                                 }

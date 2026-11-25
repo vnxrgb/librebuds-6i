@@ -27,6 +27,9 @@ import io.github.librebuds.companion.Presence
 import io.github.librebuds.companion.readDetectedBuds
 import io.github.librebuds.companion.trackPresence
 import io.github.librebuds.state.PairHistory
+import io.github.librebuds.companion.BondedDevice
+import io.github.librebuds.companion.readBondedDevices
+import io.github.librebuds.boat.detectBoat
 
 /**
  * The paired FreeBuds and which of them are connected to the phone, each from its own Bluetooth state
@@ -41,6 +44,7 @@ data class Detection(
     val permissionMissing: Boolean,
     val lastConnectedAt: Map<String, Long> = emptyMap(),
     val settled: Boolean = true,
+    val boat: List<BondedDevice> = emptyList(),
 ) {
     fun isConnected(address: String): Boolean = address.uppercase() in connected
 }
@@ -113,9 +117,11 @@ fun rememberDetection(): Detection {
 private fun readDetection(context: Context, history: PairHistory): Detection {
     val detected = readDetectedBuds(context)
     val buds = detected.orEmpty()
+    val boat = detectBoat(readBondedDevices(context).orEmpty())
     return Detection(
         buds = buds,
-        connected = buds.filter { isAudioConnected(it.address) }.mapTo(mutableSetOf()) { it.address.uppercase() },
+        connected = (buds.map { it.address } + boat.map { it.address }).filter(::isAudioConnected).mapTo(mutableSetOf()) { it.uppercase() },
+        boat = boat,
         permissionMissing = detected == null,
         lastConnectedAt = history.all(),
     )

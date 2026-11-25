@@ -31,6 +31,7 @@ data class PairRow(
     /** Only Android-level Bluetooth data is available for non-Huawei devices. */
     val genericAudio: Boolean = false,
     val brand: String? = null,
+    val boat: Boolean = false,
 ) {
     /** Shown greyed out in the list: known, still tappable, but not connected to the phone. */
     val greyed: Boolean get() = !connected
@@ -88,7 +89,12 @@ fun pairRows(
             .thenBy { it.label.lowercase() }
             .thenBy { it.address.uppercase() }
     )
-    return demo + detected
+    val boat = detection.boat.map { device ->
+        PairRow(device.address, device.name ?: "Nirvana Ion ANC", "boAt Nirvana Ion ANC",
+            detection.isConnected(device.address), null, brand = "boAt", boat = true)
+    }
+    return demo + (detected.filterNot { row -> boat.any { it.address.equals(row.address, true) } } + boat)
+        .sortedByDescending { it.connected }
 }
 
 /**
