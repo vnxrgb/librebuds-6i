@@ -28,7 +28,7 @@ class ServiceRulesTest {
     }
 
     @Test
-    fun callRecoveryDoesNotReclaimTakenOverPair() {
+    fun recoveryDoesNotReclaimTakenOverPair() {
         val planner = AutoConnectPlanner()
         planner.onLaunched(a)
         val dropped = BudsState(link = LinkState.DISCONNECTED, address = a)

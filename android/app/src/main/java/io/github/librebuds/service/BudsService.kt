@@ -17,7 +17,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
-import android.media.AudioManager
 import android.os.IBinder
 import android.provider.Settings
 import android.util.Log
@@ -78,20 +77,12 @@ class BudsService : Service() {
     private var connectJob: Job? = null
     private var connectAddress: String? = null
     private var recoveryJob: Job? = null
-    private var pausedForCallAddress: String? = null
 
     // Stopping with the latest startId never discards a START that is still being delivered.
     private var lastStartId = 0
     private var island: IslandWindow? = null
     private var receiverRegistered = false
 
-    // Never initiate the vendor RFCOMM control channel while Android is routing a call.
-    // WhatsApp uses MODE_IN_COMMUNICATION and may negotiate Bluetooth HFP asynchronously.
-    private val audioManager by lazy { getSystemService(AudioManager::class.java) }
-    private var headsetCallAudioActive = false
-    private val modeListener = AudioManager.OnModeChangedListener {
-        evaluate("call audio mode changed")
-    }
     // What evaluate() was asked for since the last decision; main thread only.
     private val pendingReasons = mutableListOf<String>()
     private var pendingPreferred: String? = null
@@ -128,7 +119,6 @@ class BudsService : Service() {
         receiverRegistered = true
         AudioProfiles.addListener(onProfilesRead)
         AudioProfiles.acquire(this)
-        audioManager.addOnModeChangedListener(mainExecutor, modeListener)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -152,7 +142,6 @@ class BudsService : Service() {
         AudioProfiles.removeListener(onProfilesRead)
         // The proxies were bound once for this process; nothing needs them once the service is gone.
         AudioProfiles.release()
-        audioManager.removeOnModeChangedListener(modeListener)
         // Nothing keeps a session alive without the service; drop it rather than leak it.
         val link = LibreBudsApp.from(this).controller.state.value.link
         if (link == LinkState.CONNECTED || link == LinkState.CONNECTING) LibreBudsApp.from(this).controller.disconnect()
@@ -216,24 +205,6 @@ class BudsService : Service() {
         }
         val controller = LibreBudsApp.from(this).controller
         val state = controller.state.value
-        // In call-safe mode, an existing vendor RFCOMM session must also be released.
-        // Merely deferring new connects leaves feature reads and writes running during VoIP.
-        // Close only LibreBuds+'s vendor control channel; Android retains exclusive HFP/SCO
-        // ownership and the phone's Bluetooth headset audio connection is untouched.
-        if (shouldDeferControlConnect(audioManager.mode, headsetCallAudioActive)) {
-            if (state.link == LinkState.CONNECTED || state.link == LinkState.CONNECTING) {
-                pausedForCallAddress = state.address
-                recoveryJob?.cancel()
-                recoveryJob = null
-                event(this, "pause vendor control channel for call audio ($reason)")
-                controller.disconnect()
-            }
-            return
-        }
-        pausedForCallAddress?.let {
-            planner.allowRetry(it)
-            pausedForCallAddress = null
-        }
         // The state collector may not have run yet (first start): a restored take-over must count already.
         planner.onState(state)
         val connected = buds.orEmpty().filter { isAudioConnected(it.address) }.map { it.address } +
@@ -243,10 +214,6 @@ class BudsService : Service() {
             connected.any { it.equals(address, ignoreCase = true) } && !planner.isHeldElsewhere(address)
         } ?: planner.target(connected, snapshot.history, state)
         if (target == null || !shouldLaunchConnect(state, target)) return
-        if (shouldDeferControlConnect(audioManager.mode, headsetCallAudioActive)) {
-            event(this, "defer control connect during call audio ($reason)")
-            return
-        }
         if (connectJob?.isActive == true) return
         recoveryJob?.cancel()
         recoveryJob = null
@@ -272,10 +239,6 @@ class BudsService : Service() {
                     // where a restored take-over waits for the profile proxies (see LibreBudsApp).
                     val controller = LibreBudsApp.from(context).controller
                     if (it.equals(controller.state.value.address, ignoreCase = true)) controller.clearTakeOver(keepWhile = ::isAudioConnected)
-                }
-                BluetoothHeadset.ACTION_AUDIO_STATE_CHANGED -> {
-                    val audioState = intent.getIntExtra(BluetoothProfile.EXTRA_STATE, BluetoothHeadset.STATE_AUDIO_DISCONNECTED)
-                    headsetCallAudioActive = audioState == BluetoothHeadset.STATE_AUDIO_CONNECTED || audioState == BluetoothHeadset.STATE_AUDIO_CONNECTING
                 }
                 BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED, BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED -> {
                     val profileState = intent.getIntExtra(BluetoothProfile.EXTRA_STATE, BluetoothProfile.STATE_DISCONNECTED)
@@ -322,7 +285,7 @@ class BudsService : Service() {
                 if (state.link == LinkState.DISCONNECTED && previous != null && previous != LinkState.DISCONNECTED) {
                     evaluate("link ended")
                     state.address?.let { address ->
-                        if (pausedForCallAddress == null && isAudioConnected(address)) scheduleRecovery(address)
+                        if (isAudioConnected(address)) scheduleRecovery(address)
                     }
                 }
                 previous = state.link
@@ -337,10 +300,6 @@ class BudsService : Service() {
             delay(wait)
             recoveryJob = null
             if (!running || !alive || !isAudioConnected(address)) return@launch
-            if (shouldDeferControlConnect(audioManager.mode, headsetCallAudioActive)) {
-                pausedForCallAddress = address
-                return@launch
-            }
             val state = LibreBudsApp.from(this@BudsService).controller.state.value
             if (state.link != LinkState.DISCONNECTED || !address.equals(state.address, ignoreCase = true)) return@launch
             planner.allowRetry(address)
@@ -449,7 +408,6 @@ class BudsService : Service() {
             BluetoothDevice.ACTION_BOND_STATE_CHANGED,
             BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED,
             BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED,
-            BluetoothHeadset.ACTION_AUDIO_STATE_CHANGED,
             BluetoothAdapter.ACTION_STATE_CHANGED,
         )
 
