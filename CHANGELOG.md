@@ -4,6 +4,15 @@ All notable changes to the **LibreBuds+** community fork are documented here.
 
 This fork is based on [LibreBuds](https://github.com/librebuds/librebuds), with interface inspiration from [QuickBuds by spizganed](https://github.com/spizganed/QuickBuds). See [NOTICE](NOTICE) and [LICENSE](LICENSE) for acknowledgments and license terms.
 
+## [1.3.0] — Connection reliability
+
+- Improved automatic control connection recovery and command priority.
+- Removed call-specific connection restrictions; Android manages audio routing.
+- Added separate phone and app connection indicators.
+- Improved multipoint refresh and safe capability discovery.
+
+Hardware compatibility and call quality require device testing. Existing Huawei model support and signing identity are retained. Voice language remains read-only.
+
 ## [1.2.0] — Huawei-only stable
 
 ### Confirmed / retained
