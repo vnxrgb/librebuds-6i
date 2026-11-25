@@ -4,7 +4,7 @@ name: Build debug APK
 on:
   workflow_dispatch:
   push:
-    branches: [main, fix/control-channel-recovery]
+    branches: [main, fix/control-channel-recovery, feature/boat-support]
   pull_request:
     branches: [main]
 

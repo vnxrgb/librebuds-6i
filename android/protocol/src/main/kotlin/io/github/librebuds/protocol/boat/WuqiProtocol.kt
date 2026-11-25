@@ -78,3 +78,39 @@ fun WuqiReply.noiseMode(): WuqiNoiseMode? =
             else -> null
         }
     } else null
+
+/** Values of zero indicate unavailable readings, not confirmed empty batteries. */
+data class WuqiBattery(val left: Int?, val right: Int?, val case: Int?)
+
+fun WuqiReply.battery(): WuqiBattery? {
+    if (command != WuqiRead.BATTERY || payload.size < 3) return null
+    fun level(index: Int) = (payload[index].toInt() and 255).takeIf { it in 1..100 }
+    return WuqiBattery(level(0), level(1), level(2))
+}
+
+fun WuqiReply.wearDetection(): Boolean? =
+    if (command == WuqiRead.WEAR_DETECTION) payload.lastOrNull()?.let {
+        when (it.toInt() and 255) { 0 -> false; 1 -> true; else -> null }
+    } else null
+
+/** Only hardware-tested writes. The caller must require explicit user action and verified reads. */
+object WuqiControls {
+    fun noise(mode: WuqiNoiseMode): ByteArray = encode(0x0205, byteArrayOf(
+        when (mode) { WuqiNoiseMode.OFF -> 0; WuqiNoiseMode.ANC -> 1; WuqiNoiseMode.AMBIENT -> 2 }
+    ))
+    fun wear(enabled: Boolean): ByteArray = encode(0x0204, byteArrayOf(if (enabled) 1 else 0))
+
+    // Ion ANC has eight active bands and two reserved flat bands per ear.
+    fun equalizer(gains: List<Int>): ByteArray {
+        require(gains.size == 8 && gains.all { it in -8..8 })
+        val bands = (gains + listOf(0, 0)).map { (it + 120).toByte() }.toByteArray()
+        return encode(0x0381, byteArrayOf(5, 3) + bands + bands)
+    }
+
+    private fun encode(code: Int, payload: ByteArray): ByteArray {
+        val bytes = byteArrayOf(8, 0xEE.toByte(), 0, 0, 0, (code shr 8).toByte(),
+            code.toByte(), (10 + payload.size).toByte(), 0) + payload + byteArrayOf(0)
+        bytes[bytes.lastIndex] = bytes.dropLast(1).sumOf { it.toInt() and 255 }.toByte()
+        return bytes
+    }
+}

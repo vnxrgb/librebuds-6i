@@ -42,4 +42,19 @@ class WuqiProtocolTest {
         assertEquals(1, result.size)
         assertNull(result.single().noiseMode())
     }
+
+    @Test fun batteryUnavailableIsNotZeroPercent() {
+        assertEquals(WuqiBattery(75, null, null), WuqiReply(WuqiRead.BATTERY, byteArrayOf(75, 0, 120)).battery())
+        assertNull(WuqiReply(WuqiRead.BATTERY, byteArrayOf(50)).battery())
+    }
+
+    @Test fun documentedWritesOnly() {
+        assertArrayEquals(byteArrayOf(8, 0xEE.toByte(), 0, 0, 0, 2, 4, 11, 0, 1, 8), WuqiControls.wear(true))
+        val eq = WuqiControls.equalizer(List(8) { 0 })
+        assertEquals(32, eq.size)
+        assertEquals(3, eq[5].toInt())
+        assertEquals(0x81, eq[6].toInt() and 255)
+        assertTrue(eq.slice(11..30).all { it == 120.toByte() })
+        assertEquals(eq.dropLast(1).sumOf { it.toInt() and 255 } and 255, eq.last().toInt() and 255)
+    }
 }
