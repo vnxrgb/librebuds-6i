@@ -3,6 +3,7 @@ package io.github.librebuds.companion
 
 import io.github.librebuds.protocol.profile.ProfileRegistry
 import io.github.librebuds.protocol.boat.BoatDetection
+import io.github.librebuds.protocol.boat.HiDefIdentity
 
 /** A paired Bluetooth device as the system lists it; [uuids] are the service UUIDs it advertised. */
 data class BondedDevice(val name: String?, val address: String, val uuids: List<String> = emptyList())
@@ -41,7 +42,7 @@ private fun isHuaweiAudioProductName(name: String?): Boolean {
 fun detectFreeBuds(bonded: List<BondedDevice>, registry: ProfileRegistry, known: Set<String>): List<DetectedBuds> {
     val knownUpper = known.mapTo(mutableSetOf()) { it.uppercase() }
     return bonded.mapNotNull { device ->
-        if (BoatDetection.isNirvanaIonAnc(device.name, device.uuids)) return@mapNotNull null
+        if (BoatDetection.isNirvanaIonAnc(device.name, device.uuids) || HiDefIdentity.matches(device.name)) return@mapNotNull null
         val profile = registry.match(btName = device.name)
         // The upstream profile catalog also includes a Huawei smart power bank.
         // This is an earbuds UI: do not try to open an audio/control session to it.

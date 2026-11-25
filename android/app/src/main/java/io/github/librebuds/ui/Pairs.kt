@@ -2,6 +2,7 @@
 package io.github.librebuds.ui
 
 import io.github.librebuds.companion.disambiguatedLabels
+import io.github.librebuds.protocol.boat.HiDefIdentity
 import io.github.librebuds.protocol.profile.Profile
 import io.github.librebuds.state.BudsState
 import io.github.librebuds.state.DEMO_ADDRESS
@@ -90,7 +91,7 @@ fun pairRows(
             .thenBy { it.address.uppercase() }
     )
     val boat = detection.boat.map { device ->
-        PairRow(device.address, device.name ?: "Nirvana Ion ANC", "boAt Nirvana Ion ANC",
+        PairRow(device.address, device.name ?: "Nirvana Ion ANC", if (HiDefIdentity.matches(device.name)) "boAt Airdopes 800 HiDef" else "boAt Nirvana Ion ANC",
             detection.isConnected(device.address), null, brand = "boAt", boat = true)
     }
     return demo + (detected.filterNot { row -> boat.any { it.address.equals(row.address, true) } } + boat)

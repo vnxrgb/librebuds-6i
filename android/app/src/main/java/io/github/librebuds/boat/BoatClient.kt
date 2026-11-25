@@ -14,7 +14,7 @@ import kotlinx.coroutines.sync.withLock
 import java.io.IOException
 
 fun detectBoat(bonded: List<BondedDevice>): List<BondedDevice> =
-    bonded.filter { BoatDetection.isNirvanaIonAnc(it.name, it.uuids) }
+    bonded.filter { BoatDetection.isNirvanaIonAnc(it.name, it.uuids) || HiDefIdentity.matches(it.name) }
 
 data class BoatStatus(
     val battery: WuqiBattery? = null,
@@ -69,7 +69,7 @@ class BoatClient(private val context: Context, private val address: String) {
 
     @SuppressLint("MissingPermission")
     private suspend fun <T> transact(operation: suspend (Channel) -> T): T = lock.withLock {
-        check(detectBoat(readBondedDevices(context).orEmpty()).any { it.address.equals(address, true) }) {
+        check(readBondedDevices(context).orEmpty().any { it.address.equals(address, true) && BoatDetection.isNirvanaIonAnc(it.name, it.uuids) }) {
             "Unsupported or unpaired boAt device"
         }
         val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter

@@ -18,6 +18,7 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import io.github.librebuds.boat.BoatClient
 import io.github.librebuds.boat.BoatStatus
 import io.github.librebuds.protocol.boat.WuqiNoiseMode
+import io.github.librebuds.protocol.boat.HiDefIdentity
 import io.github.librebuds.ui.PairRow
 import io.github.librebuds.ui.components.StyledButton
 import io.github.librebuds.ui.components.StyledScaffold
@@ -26,6 +27,18 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun BoatScreen(pair: PairRow, backLabel: String, onBack: () -> Unit) {
+    if (HiDefIdentity.matches(pair.name)) {
+        StyledScaffold(title = pair.name, showBackButton = true, backLabel = backLabel, onNavigateBack = onBack) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(screenContentPadding()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Airdopes 800 HiDef", style = MaterialTheme.typography.titleMedium)
+                Text(if (pair.connected) "Bluetooth connected" else "Bluetooth disconnected")
+                Text("Experimental recognition only. Vendor controls are not enabled until the device protocol is verified.")
+                Text("Use Android Bluetooth settings for pairing and audio codec selection.")
+            }
+        }
+        return
+    }
     val context = LocalContext.current
     val client = remember(pair.address) { BoatClient(context.applicationContext, pair.address) }
     val scope = rememberCoroutineScope()
