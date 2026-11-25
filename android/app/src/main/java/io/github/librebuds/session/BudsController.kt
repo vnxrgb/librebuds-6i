@@ -929,7 +929,7 @@ class BudsController(
             mutable.update { it.copy(link = LinkState.DISCONNECTED, lastError = LinkError.NO_REPLY) }
             return
         }
-        val next = if (isAudioConnected(address)) LinkState.TAKEN_OVER else LinkState.DISCONNECTED
+        val next = if (reason == null && isAudioConnected(address)) LinkState.TAKEN_OVER else LinkState.DISCONNECTED
         event("session closed (${reason?.let { "${it.javaClass.simpleName}: ${it.message}" } ?: "clean"}), state $next")
         mutable.update { it.copy(link = next) }
     }

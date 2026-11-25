@@ -36,17 +36,20 @@ fun shouldLaunchConnect(state: BudsState, address: String): Boolean {
  */
 class AutoConnectPlanner {
     private val attempted = mutableSetOf<String>()
+    private val retryCounts = mutableMapOf<String, Int>()
     private val heldElsewhere = mutableSetOf<String>()
 
     /** The link of [address] to the phone came up (again): a connect may be tried once more. */
     fun onLinkUp(address: String) {
         attempted -= address.uppercase()
+        retryCounts.remove(address.uppercase())
     }
 
     /** [address] left the phone: forget everything about it. */
     fun onGone(address: String) {
         attempted -= address.uppercase()
         heldElsewhere -= address.uppercase()
+        retryCounts.remove(address.uppercase())
     }
 
     /**
@@ -57,7 +60,10 @@ class AutoConnectPlanner {
         val address = state.address?.uppercase() ?: return
         when (state.link) {
             LinkState.TAKEN_OVER -> heldElsewhere += address
-            LinkState.CONNECTED -> heldElsewhere -= address
+            LinkState.CONNECTED -> {
+                heldElsewhere -= address
+                retryCounts.remove(address)
+            }
             else -> Unit
         }
     }
@@ -65,6 +71,20 @@ class AutoConnectPlanner {
     /** Records that a connect to [address] was launched. */
     fun onLaunched(address: String) {
         attempted += address.uppercase()
+    }
+
+    /** Bounded recovery for a lost local control channel, never for a recorded takeover. */
+    fun nextRetryDelay(address: String): Long? {
+        val key = address.uppercase()
+        if (key in heldElsewhere) return null
+        val count = retryCounts[key] ?: 0
+        if (count >= 4) return null
+        retryCounts[key] = count + 1
+        return 2_000L shl count
+    }
+
+    fun allowRetry(address: String) {
+        if (!isHeldElsewhere(address)) attempted -= address.uppercase()
     }
 
     /** Whether [address] is held by another device as far as this planner knows. */

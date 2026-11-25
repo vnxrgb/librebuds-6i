@@ -10,6 +10,36 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ServiceRulesTest {
+    @Test
+    fun temporaryControlLossRetriesWithBoundedBackoff() {
+        val planner = AutoConnectPlanner()
+        planner.onLaunched(a)
+        val dropped = BudsState(link = LinkState.DISCONNECTED, address = a)
+        for (wait in listOf(2000L, 4000L, 8000L, 16000L)) {
+            assertNull(planner.target(listOf(a), emptyMap(), dropped))
+            assertEquals(wait, planner.nextRetryDelay(a))
+            planner.allowRetry(a)
+            assertEquals(a, planner.target(listOf(a), emptyMap(), dropped))
+            planner.onLaunched(a)
+        }
+        assertNull(planner.nextRetryDelay(a))
+        planner.onState(BudsState(link = LinkState.CONNECTED, address = a))
+        assertEquals(2000L, planner.nextRetryDelay(a))
+    }
+
+    @Test
+    fun callRecoveryDoesNotReclaimTakenOverPair() {
+        val planner = AutoConnectPlanner()
+        planner.onLaunched(a)
+        val dropped = BudsState(link = LinkState.DISCONNECTED, address = a)
+        planner.allowRetry(a)
+        assertEquals(a, planner.target(listOf(a), emptyMap(), dropped))
+        planner.onState(BudsState(link = LinkState.TAKEN_OVER, address = a))
+        planner.allowRetry(a)
+        assertNull(planner.nextRetryDelay(a))
+        assertNull(planner.target(listOf(a), emptyMap(), dropped))
+    }
+
     private val a = "AA:AA:AA:AA:AA:AA"
     private val b = "BB:BB:BB:BB:BB:BB"
     private val c = "CC:CC:CC:CC:CC:CC"

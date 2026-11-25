@@ -56,6 +56,7 @@ import io.github.librebuds.ui.model.toUiBatteries
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -76,6 +77,8 @@ class BudsService : Service() {
     // The latest connect launched by this service and the address it is for.
     private var connectJob: Job? = null
     private var connectAddress: String? = null
+    private var recoveryJob: Job? = null
+    private var pausedForCallAddress: String? = null
 
     // Stopping with the latest startId never discards a START that is still being delivered.
     private var lastStartId = 0
@@ -219,10 +222,17 @@ class BudsService : Service() {
         // ownership and the phone's Bluetooth headset audio connection is untouched.
         if (shouldDeferControlConnect(audioManager.mode, headsetCallAudioActive)) {
             if (state.link == LinkState.CONNECTED || state.link == LinkState.CONNECTING) {
+                pausedForCallAddress = state.address
+                recoveryJob?.cancel()
+                recoveryJob = null
                 event(this, "pause vendor control channel for call audio ($reason)")
                 controller.disconnect()
             }
             return
+        }
+        pausedForCallAddress?.let {
+            planner.allowRetry(it)
+            pausedForCallAddress = null
         }
         // The state collector may not have run yet (first start): a restored take-over must count already.
         planner.onState(state)
@@ -237,7 +247,9 @@ class BudsService : Service() {
             event(this, "defer control connect during call audio ($reason)")
             return
         }
-        if (connectJob?.isActive == true && target.equals(connectAddress, ignoreCase = true)) return
+        if (connectJob?.isActive == true) return
+        recoveryJob?.cancel()
+        recoveryJob = null
         val name = buds.orEmpty().firstOrNull { it.address.equals(target, ignoreCase = true) }?.bondedName
         event(this, "connect ${EventLog.maskMac(target)} ($reason, link ${state.link})")
         launchConnect(target, name)
@@ -303,9 +315,36 @@ class BudsService : Service() {
                 // Without POST_NOTIFICATIONS the update is dropped; the service keeps running.
                 manager.notify(NOTIFICATION_ID, notification(state))
                 // A link that just ended may leave another connected pair to switch to.
-                if (state.link == LinkState.DISCONNECTED && previous != null && previous != LinkState.DISCONNECTED) evaluate("link ended")
+                if (state.link == LinkState.CONNECTED || state.link == LinkState.TAKEN_OVER) {
+                    recoveryJob?.cancel()
+                    recoveryJob = null
+                }
+                if (state.link == LinkState.DISCONNECTED && previous != null && previous != LinkState.DISCONNECTED) {
+                    evaluate("link ended")
+                    state.address?.let { address ->
+                        if (pausedForCallAddress == null && isAudioConnected(address)) scheduleRecovery(address)
+                    }
+                }
                 previous = state.link
             }
+        }
+    }
+
+    private fun scheduleRecovery(address: String) {
+        recoveryJob?.cancel()
+        val wait = planner.nextRetryDelay(address) ?: return
+        recoveryJob = scope.launch {
+            delay(wait)
+            recoveryJob = null
+            if (!running || !alive || !isAudioConnected(address)) return@launch
+            if (shouldDeferControlConnect(audioManager.mode, headsetCallAudioActive)) {
+                pausedForCallAddress = address
+                return@launch
+            }
+            val state = LibreBudsApp.from(this@BudsService).controller.state.value
+            if (state.link != LinkState.DISCONNECTED || !address.equals(state.address, ignoreCase = true)) return@launch
+            planner.allowRetry(address)
+            sweep()
         }
     }
 
@@ -313,7 +352,15 @@ class BudsService : Service() {
         val app = LibreBudsApp.from(this)
         planner.onLaunched(address)
         connectAddress = address
-        connectJob = app.appScope.launch { app.controller.connect(address, name) }
+        connectJob = app.appScope.launch {
+            try {
+                app.controller.connect(address, name)
+            } finally {
+                scope.launch {
+                    if (running && alive) evaluate("connect finished")
+                }
+            }
+        }
     }
 
     /** Shows the connection island; runs on the main thread, where the state collector runs. */
