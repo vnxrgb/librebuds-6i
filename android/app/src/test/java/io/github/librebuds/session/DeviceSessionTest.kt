@@ -26,6 +26,27 @@ class DeviceSessionTest {
     private val batteryPush = "5A 00 10 00 01 27 01 01 5A 02 03 64 5A 30 03 03 00 00 01 E7 9E"
 
     @Test
+    fun foregroundRequestOvertakesQueuedBackgroundRead() = runTest {
+        val link = FakeLink()
+        val session = DeviceSession(link, backgroundScope, timeoutMillis = 100, retries = 0)
+        val first = backgroundScope.async(start = CoroutineStart.UNDISPATCHED) {
+            session.request(Battery.request(), background = true)
+        }
+        val second = backgroundScope.async(start = CoroutineStart.UNDISPATCHED) {
+            session.request(Battery.request(), background = true)
+        }
+        val user = backgroundScope.async(start = CoroutineStart.UNDISPATCHED) {
+            session.request(Anc.readRequest())
+        }
+        first.await()
+        user.await()
+        assertFalse(second.isCompleted)
+        second.await()
+        assertEquals(3, link.written.size)
+        assertTrue(link.written[1].contentEquals(Anc.readRequest().toFrame()))
+    }
+
+    @Test
     fun requestGetsMatchingReply() = runTest {
         val earbuds = FakeEarbuds()
         val session = DeviceSession(earbuds.link(), backgroundScope)

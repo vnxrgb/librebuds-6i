@@ -151,9 +151,9 @@ class BudsController(
         event("connect ${EventLog.maskMac(address)} (generation $myGeneration)")
         val link = openLink(address, myGeneration)
         if (link == null) {
-            // With audio still up after the retry, the earbuds are there but another device holds
-            // the control channel.
-            val next = if (isAudioConnected(address)) LinkState.TAKEN_OVER else LinkState.DISCONNECTED
+            // A failed open alone does not prove takeover. Preserve a known takeover only
+            // when an explicit reclaim failed; otherwise allow bounded background recovery.
+            val next = if (previous?.link == LinkState.TAKEN_OVER && isAudioConnected(address)) LinkState.TAKEN_OVER else LinkState.DISCONNECTED
             val current = generation.get() == myGeneration
             event("connect gave up: no link, ${if (current) "state $next" else "superseded"}")
             if (current) mutable.update { it.copy(link = next) }
@@ -234,7 +234,7 @@ class BudsController(
     private suspend fun readSettings(current: DeviceSession, myGeneration: Int) {
         // Null when [current] went stale (stop), else the reply (null inside the result on a failed read).
         suspend fun request(key: String, packet: Packet, accept: (Packet) -> Boolean = { true }): Result<Packet>? {
-            val result = current.request(packet, timeoutMillis = OPTIONAL_READ_MILLIS, retries = 0, countsTowardGiveUp = false, accept = accept)
+            val result = current.request(packet, timeoutMillis = OPTIONAL_READ_MILLIS, retries = 0, countsTowardGiveUp = false, background = true, accept = accept)
             if (!isCurrent(current, myGeneration)) return null
             result.onSuccess(::applyPacket)
             if (result.exceptionOrNull() is RequestTimeoutException) updateSettings { it.copy(unanswered = it.unanswered + key) }
@@ -835,9 +835,10 @@ class BudsController(
 
     override suspend fun refresh(): Result<Unit> {
         val current = session ?: return Result.failure(NotConnectedException())
-        current.request(Battery.request()).onSuccess(::applyPacket)
-        if (profile.supports("anc")) current.request(Anc.readRequest()).onSuccess(::applyPacket)
-        return Result.success(Unit)
+        val battery = current.request(Battery.request()).onSuccess(::applyPacket)
+        val anc = if (profile.supports("anc")) current.request(Anc.readRequest()).onSuccess(::applyPacket) else null
+        val error = battery.exceptionOrNull() ?: anc?.exceptionOrNull()
+        return if (error == null) Result.success(Unit) else Result.failure(error)
     }
 
     override suspend fun takeOver(): Result<Unit> {

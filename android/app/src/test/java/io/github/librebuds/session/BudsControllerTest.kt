@@ -360,11 +360,11 @@ class BudsControllerTest {
     }
 
     @Test
-    fun openFailureWithAudioUpIsTakenOver() = runTest {
+    fun openFailureWithAudioUpCanRecover() = runTest {
         val c = BudsController(LinkFactory { throw IOException("busy") }, registry, backgroundScope, isAudioConnected = { it == "AA" })
         c.connect("AA", "x")
-        assertEquals(LinkState.TAKEN_OVER, c.state.value.link)
-        assertFalse(shouldLaunchConnect(c.state.value, "AA"))
+        assertEquals(LinkState.DISCONNECTED, c.state.value.link)
+        assertTrue(shouldLaunchConnect(c.state.value, "AA"))
         c.connect("BB", "y")
         assertEquals(LinkState.DISCONNECTED, c.state.value.link)
     }
@@ -420,12 +420,12 @@ class BudsControllerTest {
     }
 
     @Test
-    fun openFailingTwiceWithAudioUpIsTakenOver() = runTest {
+    fun openFailingTwiceWithAudioUpCanRecover() = runTest {
         var opens = 0
         val c = BudsController(LinkFactory { opens++; throw IOException("busy") }, registry, backgroundScope, isAudioConnected = { true })
         c.connect("AA", "x")
         assertEquals(2, opens)
-        assertEquals(LinkState.TAKEN_OVER, c.state.value.link)
+        assertEquals(LinkState.DISCONNECTED, c.state.value.link)
     }
 
     @Test

@@ -14,12 +14,14 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class SessionClosedException : IOException("link closed")
 
@@ -50,6 +52,7 @@ class DeviceSession(
     private val reassembler = FrameReassembler()
     private val resetRequested = AtomicBoolean(false)
     private val requestLock = Mutex()
+    private val foregroundPending = AtomicInteger(0)
     private val mutablePackets = MutableSharedFlow<Packet>(extraBufferCapacity = 64)
     private val closedSignal = CompletableDeferred<Throwable?>()
 
@@ -116,15 +119,16 @@ class DeviceSession(
         timeoutMillis: Long = this.timeoutMillis,
         retries: Int = this.retries,
         countsTowardGiveUp: Boolean = true,
+        background: Boolean = false,
         accept: (Packet) -> Boolean = { true },
-    ): Result<Packet> = requestLock.withLock {
+    ): Result<Packet> = withCommandSlot(background) {
         repeat(retries + 1) {
-            if (closedSignal.isCompleted) return Result.failure(SessionClosedException())
+            if (closedSignal.isCompleted) return@withCommandSlot Result.failure(SessionClosedException())
             val current = Waiter(reply, accept, CompletableDeferred())
             waiter = current
             if (closedSignal.isCompleted) {
                 waiter = null
-                return Result.failure(SessionClosedException())
+                return@withCommandSlot Result.failure(SessionClosedException())
             }
             try {
                 write(packet.toFrame())
@@ -132,13 +136,14 @@ class DeviceSession(
                 val answer = withTimeoutOrNull(timeoutMillis) { current.result.await() }
                 if (answer != null) {
                     consecutiveFailures = 0
-                    return Result.success(answer)
+                    return@withCommandSlot Result.success(answer)
                 }
                 resetRequested.set(true)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                return Result.failure(e)
+                if (e is IOException && e !is SessionClosedException) closeWith(e)
+                return@withCommandSlot Result.failure(e)
             } finally {
                 waiter = null
             }
@@ -151,7 +156,38 @@ class DeviceSession(
     }
 
     suspend fun send(packet: Packet) {
-        requestLock.withLock { write(packet.toFrame()) }
+        withCommandSlot(background = false) {
+            if (closedSignal.isCompleted) throw SessionClosedException()
+            try {
+                write(packet.toFrame())
+            } catch (e: IOException) {
+                closeWith(e)
+                throw e
+            }
+        }
+    }
+
+    // Never interrupt an in-flight command. Background reads wait behind queued user actions.
+    private suspend fun <T> withCommandSlot(background: Boolean, block: suspend () -> T): T {
+        if (!background) {
+            foregroundPending.incrementAndGet()
+            try {
+                return requestLock.withLock { block() }
+            } finally {
+                foregroundPending.decrementAndGet()
+            }
+        }
+        while (true) {
+            if (foregroundPending.get() == 0) {
+                requestLock.lock()
+                try {
+                    if (foregroundPending.get() == 0) return block()
+                } finally {
+                    requestLock.unlock()
+                }
+            }
+            delay(10)
+        }
     }
 
     fun close() = closeWith(null)
