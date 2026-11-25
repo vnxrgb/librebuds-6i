@@ -16,6 +16,7 @@ import io.github.librebuds.state.SettingChange
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -135,6 +136,16 @@ class BudsControllerSettingsTest {
         assertEquals(1, link.sentIds().count { it == "2B/31" })
         earbuds.hosts[1].state = 0
         link.deliver(earbuds.hostChangePush())
+        runCurrent()
+        // The controller coalesces bursts of device notifications for 300 ms.
+        assertEquals(1, link.sentIds().count { it == "2B/31" })
+        advanceTimeBy(100)
+        link.deliver(earbuds.hostChangePush())
+        runCurrent()
+        advanceTimeBy(299)
+        runCurrent()
+        assertEquals(1, link.sentIds().count { it == "2B/31" })
+        advanceTimeBy(1)
         runCurrent()
         assertEquals(2, link.sentIds().count { it == "2B/31" })
         assertFalse(c.state.value.hosts[1].connected)
