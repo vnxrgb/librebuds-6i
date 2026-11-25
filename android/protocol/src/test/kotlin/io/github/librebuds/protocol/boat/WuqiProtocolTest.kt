@@ -1,7 +1,7 @@
 package io.github.librebuds.protocol.boat
 
-import org.junit.Test
-import org.junit.Assert.*
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Assertions.*
 
 class WuqiProtocolTest {
     @Test fun exactModelAndServiceRequired() {
